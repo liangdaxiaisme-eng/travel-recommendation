@@ -1,0 +1,5 @@
+*.pkl
+*.pt
+*.png
+__pycache__/
+*.pyc
