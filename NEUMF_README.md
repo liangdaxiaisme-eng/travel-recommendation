@@ -22,21 +22,23 @@
 
 ## 📦 文件说明
 
-### 核心文件（必须）
+### 核心文件
 
 - `recommendation_neumf_fixed.py` - NeuMF深度学习版本主程序
 - `neumf_weights_real.pt` - NeuMF模型权重文件（13MB）
 - `item_profile.csv` - 景点数据（4.5MB）
+- `user_item_behavior_history_desensitized.csv` - 用户行为数据（已脱敏）
+- `user_profile_desensitized.csv` - 用户画像数据（已脱敏）
 
 ### 配置文件
 
 - `requirements.txt` - Python依赖清单
 - `README.md` - 详细使用说明
-- `DEPLOYMENT_GUIDE.md` - 部署指南（本文档）
+- `GITHUB_UPLOAD_GUIDE.md` - GitHub上传指南
 
 ## 🚀 快速开始
 
-### 方式一：本地部署（推荐新手）
+### 方式一：本地部署
 
 #### 1. 安装依赖
 
@@ -67,8 +69,7 @@ python3 recommendation_neumf_fixed.py
 
 使用 scp 上传所有文件到服务器：
 ```bash
-# 在本地执行
-scp -r 飞猪旅行推荐系统_NeuMF版本/ adminm@10.151.165.67:~/飞猪推荐/
+scp -r * adminm@10.151.165.67:~/飞猪推荐/
 ```
 
 #### 3. 安装依赖
@@ -143,6 +144,25 @@ python3 recommendation_neumf_fixed.py
 
 ## 📊 数据说明
 
+### 用户行为数据
+
+**文件**：`user_item_behavior_history_desensitized.csv`
+
+**格式**：
+```
+user_id,item_id,action,timestamp
+1000560,57443,clk,1592181694
+1000560,57443,clk,1592181520
+```
+
+**字段说明**：
+- `user_id`：用户ID（已脱敏，保留最后4位）
+- `item_id`：景点ID（已脱敏，保留最后4位）
+- `action`：操作类型（clk=点击）
+- `timestamp`：时间戳（Unix时间）
+
+**数据规模**：1,071,442 条记录
+
 ### 景点数据
 
 **文件**：`item_profile.csv`
@@ -151,7 +171,6 @@ python3 recommendation_neumf_fixed.py
 ```
 item_id,city_id,avg_price,unknown
 45214,51,104,-1
-56843,33,248,-1
 ```
 
 **字段说明**：
@@ -162,30 +181,9 @@ item_id,city_id,avg_price,unknown
 
 **数据规模**：273,188 个景点
 
-### 用户行为数据（可选）
+### 用户画像数据
 
-**文件**：`user_item_behavior_history.csv`
-
-**格式**：
-```
-user_id,item_id,action,timestamp
-1000560,57443,clk,1592181694
-1000560,57443,clk,1592181520
-```
-
-**字段说明**：
-- `user_id`：用户ID
-- `item_id`：景点ID
-- `action`：操作类型（clk=点击）
-- `timestamp`：时间戳（Unix时间）
-
-**数据规模**：1,071,442 条记录
-
-**是否必须？** - 系统可以正常运行，但推荐结果会更准确
-
-### 用户画像数据（可选）
-
-**文件**：`user_profile.csv`
+**文件**：`user_profile_desensitized.csv`
 
 **格式**：
 ```
@@ -194,14 +192,12 @@ user_id,age,gender,location
 ```
 
 **字段说明**：
-- `user_id`：用户ID
+- `user_id`：用户ID（已脱敏，保留最后4位）
 - `age`：年龄
 - `gender`：性别
 - `location`：位置
 
 **数据规模**：310,000+ 用户
-
-**是否必须？** - 系统可以正常运行，但推荐结果会更准确
 
 ## 🧠 NeuMF 模型说明
 
@@ -339,7 +335,7 @@ kill -9 <PID>
 
 ### 数据隐私
 
-- ✅ 已脱敏的真实用户数据（如果使用）
+- ✅ 已脱敏的真实用户数据
 - ✅ 用户ID和景点ID已保留最后4位
 - ✅ 适合公开发布
 
