@@ -1,130 +1,219 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-飞猪旅行推荐系统 - 超轻量版
-基于物品的协同过滤
+Item-CF推荐模型训练
+基于飞猪旅行数据集
 """
-
 import pandas as pd
 import numpy as np
-from scipy import sparse
 from collections import defaultdict
+from scipy.sparse import csr_matrix
 import pickle
+import os
 import time
 
 print("=" * 60)
-print("飞猪旅行推荐系统 - 基于物品的协同过滤")
+print("飞猪旅行推荐系统 - Item-CF模型训练")
 print("=" * 60)
 
 start_time = time.time()
 
-# 1. 加载数据（限制大小）
-print("\n[1] 加载数据...")
-train = pd.read_csv("/root/飞猪数据集/交互数据/train.csv")
-test = pd.read_csv("/root/飞猪数据集/交互数据/test.csv")
+# 数据路径
+DATA_DIR = "/home/asd/论文资料/4/旅游推荐数据集"
+BEHAVIOR_FILE = f"{DATA_DIR}/训练代码/data/user_item_behavior_history.csv"
+ITEM_FILE = f"{DATA_DIR}/训练代码/data/item_profile.csv"
+USER_FILE = f"{DATA_DIR}/训练代码/data/user_profile.csv"
+MODEL_FILE = f"{DATA_DIR}/model_item_cf.pkl"
 
-# 限制数据规模以加速
-N_USERS = 30000
-N_ITEMS = 10000
+# 1. 加载数据
+print("\n[1/5] 加载数据...")
+start = time.time()
 
-train = train[train['user_id'].isin(train['user_id'].unique()[:N_USERS])]
-train = train[train['item_id'].isin(train['item_id'].unique()[:N_ITEMS])]
+# 用户行为数据
+behavior = pd.read_csv(BEHAVIOR_FILE, header=None,
+                       names=['user_id', 'item_id', 'action', 'timestamp'])
+print(f"  用户行为数据: {len(behavior):,} 条")
 
-print(f"  训练集: {len(train)}, 测试集: {len(test)}")
+# 景点数据
+try:
+    items = pd.read_csv(ITEM_FILE)
+    print(f"  景点数据: {len(items)} 条")
+except Exception as e:
+    print(f"  警告: 景点数据加载失败: {e}")
+    items = None
 
-# 2. 创建ID映射
-print("\n[2] 创建ID映射...")
-users = train['user_id'].unique()
-items = train['item_id'].unique()
-user2idx = {u: i for i, u in enumerate(users)}
-item2idx = {it: i for i, it in enumerate(items)}
-idx2item = {i: it for it, i in item2idx.items()}
+# 用户数据
+try:
+    users = pd.read_csv(USER_FILE)
+    print(f"  用户数据: {len(users)} 条")
+except Exception as e:
+    print(f"  警告: 用户数据加载失败: {e}")
+    users = None
+
+print(f"  数据加载耗时: {time.time() - start:.1f}秒")
+
+# 2. 数据预处理
+print("\n[2/5] 数据预处理...")
+start = time.time()
+
+# 限制数据规模（避免内存溢出）
+MAX_USERS = 50000
+MAX_ITEMS = 30000
+
+all_users = behavior['user_id'].unique()[:MAX_USERS]
+all_items = behavior['item_id'].unique()[:MAX_ITEMS]
+
+print(f"  用户数: {len(all_users)}")
+print(f"  景点数: {len(all_items)}")
+
+# 创建ID映射
+user2idx = {u: i for i, u in enumerate(all_users)}
+item2idx = {it: i for i, it in enumerate(all_items)}
 
 n_users = len(user2idx)
 n_items = len(item2idx)
-print(f"  用户数: {n_users}, 景点数: {n_items}")
+print(f"  映射后用户数: {n_users}, 景点数: {n_items}")
 
-# 3. 构建用户-物品交互（稀疏矩阵）
-print("\n[3] 构建交互矩阵...")
-rows = train['user_id'].map(user2idx).values
-cols = train['item_id'].map(item2idx).values
-data = np.ones(len(train))
+# 3. 构建用户-景点交互矩阵
+print("\n[3/5] 构建交互矩阵...")
+start = time.time()
 
-user_item_matrix = sparse.csr_matrix((data, (rows, cols)), shape=(n_users, n_items))
-print(f"  矩阵: {user_item_matrix.shape}, 非零: {user_item_matrix.nnz}")
+# 只保留在映射范围内的数据
+behavior_filtered = behavior[
+    behavior['user_id'].isin(all_users) &
+    behavior['item_id'].isin(all_items)
+]
 
-# 4. 计算物品相似度 (余弦相似度)
-print("\n[4] 计算物品相似度...")
-item_item_matrix = user_item_matrix.T @ user_item_matrix  # 物品-物品共现矩阵
-item_norms = np.sqrt(item_item_matrix.diagonal())
-item_norms[item_norms == 0] = 1  # 避免除零
+print(f"  过滤后行为数据: {len(behavior_filtered):,} 条")
 
-# 归一化得到余弦相似度
-item_similarity = item_item_matrix / item_norms[:, None] / item_norms[None, :]
-item_similarity = item_similarity.tocsr()
-print(f"  相似度矩阵: {item_similarity.shape}")
+# 构建交互矩阵
+user_item_matrix = np.zeros((n_users, n_items), dtype=np.float32)
+for _, row in behavior_filtered.iterrows():
+    u_idx = user2idx[row['user_id']]
+    i_idx = item2idx[row['item_id']]
+    user_item_matrix[u_idx, i_idx] = 1.0
 
-# 5. 生成推荐
-print("\n[5] 评估模型...")
+稀疏度 = 1 - (user_item_matrix.sum() / (n_users * n_items))
+print(f"  交互矩阵形状: {user_item_matrix.shape}")
+print(f"  稀疏度: {稀疏度:.4f}")
+print(f"  交互次数: {user_item_matrix.sum():,}")
+print(f"  构建耗时: {time.time() - start:.1f}秒")
 
-def recommend(user_id, k=10):
-    if user_id not in user2idx:
-        return []
-    u_idx = user2idx[user_id]
-    
-    # 获取用户已交互的物品
-    user_items = user_item_matrix[u_idx].indices
-    if len(user_items) == 0:
-        return []
-    
-    # 计算推荐分数（基于相似物品）
-    scores = np.zeros(n_items)
-    for item_idx in user_items:
-        similarity = item_similarity[item_idx].toarray().flatten()
-        scores += similarity
-    
-    # 排除已交互
-    scores[user_items] = -np.inf
-    
-    # 取top-k
-    top_k = np.argsort(scores)[-k:][::-1]
-    return [idx2item[i] for i in top_k if scores[i] > -np.inf]
+# 4. 计算物品相似度（余弦相似度）
+print("\n[4/5] 计算物品相似度...")
+start = time.time()
 
-# 评估
-hits = 0
-total = 0
-test_sample = test[test['user_id'].isin(user2idx.keys())]['user_id'].unique()[:1000]
+# 转换为CSR格式
+user_item_csr = csr_matrix(user_item_matrix)
 
-for u in test_sample:
-    gt = set(test[test['user_id'] == u]['item_id'])
-    if not gt:
-        continue
-    recs = set(recommend(u, 10))
-    if len(gt & recs) > 0:
-        hits += 1
-    total += 1
+# 计算物品相似度矩阵（物品×物品）
+item_sim = user_item_csr.T.dot(user_item_csr)
+# 归一化
+norms = np.sqrt(item_sim.diagonal())
+item_sim = item_sim / norms[:, np.newaxis]
 
-hit_rate = hits / total if total > 0 else 0
-print(f"  Hit Rate@10: {hit_rate:.4f}")
+# 只保留Top-K相似物品
+K = 50
+# 获取每个物品的Top-K相似物品
+item_sim_topk = np.zeros_like(item_sim)
+for i in range(n_items):
+    # 获取相似度最高的K个物品（不包括自己）
+    sim_scores = item_sim[i].copy()
+    sim_scores[i] = -1  # 排除自己
+    top_k_indices = np.argpartition(sim_scores, -K)[-K:]
+    top_k_indices = top_k_indices[np.argsort(-sim_scores[top_k_indices])]
+    item_sim_topk[i, top_k_indices] = sim_scores[top_k_indices]
 
-# 6. 保存模型
-print("\n[6] 保存模型...")
+print(f"  物品相似度计算完成")
+print(f"  耗时: {time.time() - start:.1f}秒")
+
+# 5. 保存模型
+print("\n[5/5] 保存模型...")
+start = time.time()
+
 model = {
-    "item_similarity": item_similarity,
     "user_item_matrix": user_item_matrix,
+    "item_sim": item_sim_topk,
     "user2idx": user2idx,
     "item2idx": item2idx,
-    "idx2item": idx2item,
-    "metrics": {"hit_rate@10": hit_rate}
+    "idx2user": {i: u for u, i in user2idx.items()},
+    "idx2item": {i: it for it, i in item2idx.items()},
+    "n_users": n_users,
+    "n_items": n_items,
+    "K": K,
+    "metrics": {
+        "n_users": n_users,
+        "n_items": n_items,
+        "sparsity": 稀疏度,
+        "interactions": int(user_item_matrix.sum())
+    }
 }
 
-model_path = "/root/飞猪数据集/模型训练/model_item_cf.pkl"
-with open(model_path, "wb") as f:
+with open(MODEL_FILE, 'wb') as f:
     pickle.dump(model, f)
 
+print(f"  模型已保存: {MODEL_FILE}")
+print(f"  文件大小: {os.path.getsize(MODEL_FILE) / 1024:.1f} KB")
+print(f"  保存耗时: {time.time() - start:.1f}秒")
+
+# 6. 评估
+print("\n[6/6] 模型评估...")
+start = time.time()
+
+# 在测试集上评估（使用最后10%的行为作为测试集）
+behavior_sorted = behavior_filtered.sort_values('timestamp')
+split_idx = int(len(behavior_sorted) * 0.9)
+train_data = behavior_sorted.iloc[:split_idx]
+test_data = behavior_sorted.iloc[split_idx:]
+
+print(f"  训练集: {len(train_data):,} 条")
+print(f"  测试集: {len(test_data):,} 条")
+
+# 计算Hit Rate@10
+hits = 0
+total = 0
+test_users = test_data['user_id'].unique()
+
+for user_id in test_users[:1000]:  # 限制评估用户数
+    if user_id not in user2idx:
+        continue
+
+    # 获取该用户历史交互的物品
+    user_idx = user2idx[user_id]
+    history_items = np.where(user_item_matrix[user_idx] > 0)[0]
+
+    if len(history_items) == 0:
+        continue
+
+    # 获取推荐物品（基于相似度）
+    rec_items = []
+    for item_idx in history_items:
+        # 获取最相似的K个物品
+        similar_items = np.where(item_sim_topk[item_idx] > 0)[0]
+        rec_items.extend(similar_items)
+
+    # 去重并排序
+    rec_items = list(set(rec_items))
+    rec_items = [idx2item[i] for i in rec_items if i in idx2item]
+
+    # 获取真实交互的物品
+    gt_items = set(test_data[test_data['user_id'] == user_id]['item_id'])
+
+    # 计算Hit Rate@10
+    if len(rec_items) >= 10:
+        rec_set = set(rec_items[:10])
+        if len(gt_items & rec_set) > 0:
+            hits += 1
+    total += 1
+
+hr_at_10 = hits / total if total > 0 else 0
+print(f"  Hit Rate@10: {hr_at_10:.4f} ({hits}/{total})")
+print(f"  评估耗时: {time.time() - start:.1f}秒")
+
+# 总结
 elapsed = time.time() - start_time
-print(f"\n用时: {elapsed:.1f}秒")
-print(f"模型: {model_path}")
-print("=" * 60)
-print("完成!")
-print("=" * 60)
+print(f"\n{'=' * 60}")
+print(f"训练完成!")
+print(f"总耗时: {elapsed:.1f}秒")
+print(f"模型文件: {MODEL_FILE}")
+print(f"{'=' * 60}")
