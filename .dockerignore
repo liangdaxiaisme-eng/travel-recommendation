@@ -1,0 +1,42 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 数据文件（大文件不应包含在镜像中）
+*.csv
+*.pt
+*.pkl
+
+# 日志
+*.log
+logs/
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 文档（可选）
+*.md
+!README.md
+
+# 压缩包
+*.zip
+*.tar.gz
+*.tar

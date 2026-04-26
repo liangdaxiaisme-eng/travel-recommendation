@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  feizhu-recommendation:
+    build: .
+    image: feizhu-recommendation:latest
+    container_name: feizhu-recommendation
+    ports:
+      - "4009:4009"
+    volumes:
+      # 挂载数据文件（可选，如果需要持久化数据）
+      - ./data:/app/data
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4009/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # 可选：Redis 缓存（后续功能扩展）
+  # redis:
+  #   image: redis:7-alpine
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis-data:/data
+  #   restart: unless-stopped
+
+# volumes:
+#   redis-data:
